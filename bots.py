@@ -25,17 +25,20 @@ def get_forbidden_words(forbidden_json="forbidden.json"):
 
 class GPT2Bot(ABC):
 
-    def __init__(self, name="Bot", checkpoint="latest", post=True, **generation_kwargs):
+    def __init__(self, name="Bot", checkpoint="latest", post_to_facebook=True, **generation_kwargs):
         self.generation_kwargs = generation_kwargs
         self.name = name
         self.checkpoint = checkpoint
+        self.texts = []
+        self.post_to_facebook = post_to_facebook
+        self.min_post_size = 50
         try:
             self.token = get_tokens()[name]
         except:
-            print(f"No token found for {name}.")
-        self.texts = []
-        self.post = post
-    
+            self.post_to_facebook = False
+            print(f"No token found for {name}. Bot will not post to facebook.")
+        print(f"Create bot {name} with\n{generation_kwargs}")
+
     def generate_texts(self, **generation_kwargs):
         texts, _ = generate_texts(self.name, 
                                     checkpoint=self.checkpoint,
@@ -67,7 +70,7 @@ class GPT2Bot(ABC):
 
     def get_post_text(self):
         text = ""
-        while len(text) < 20:
+        while len(text) < self.min_post_size:
             text = self.format_text(self.get_text())
         return text
 
@@ -86,7 +89,7 @@ class GPT2Bot(ABC):
         return None
 
     def log(self, message):
-        with open(f"logs/bot_{self.name}.log", "a") as file:
+        with open(f"logs/bot_{self.name}.log", "a", encoding="utf-8") as file:
             file.write(message + "\n")
         return
 
@@ -96,7 +99,7 @@ class GPT2Bot(ABC):
         graph = facebook.GraphAPI(self.token)
         post_time = dt.now().isoformat()
         try:
-            if self.post:
+            if self.post_to_facebook:
                 post_id = graph.put_object(parent_object='me', message=message, image=image, connection_name="feed")["id"]
             else:
                 post_id = "NOT_POSTED"
@@ -104,7 +107,6 @@ class GPT2Bot(ABC):
         except Exception as e:
             log_message = "ERROR POSTING FOR " + self.name + " at " + post_time + "\n" + str(e)
         self.log(log_message)
-
 
 class BibleBot(GPT2Bot):
     
@@ -117,7 +119,7 @@ class BibleBot(GPT2Bot):
             p = np.linspace(1, 0, size)
             return p/sum(p)
         try:
-            end = list(re.finditer("[.;\n”\"]", text))[-1].start()
+            end = list(re.finditer("[.;\n”\"\?]", text))[-1].start()
         except:
             end = len(text)
         book = np.random.choice(self.books)
@@ -138,7 +140,7 @@ class QuranBot(GPT2Bot):
             p = np.linspace(1, 0, size)
             return p/sum(p)
         try:
-            end = list(re.finditer("[.;\n”\"]", text))[-1].start()
+            end = list(re.finditer("[.;\n”\"\?]", text))[-1].start()
         except:
             end = len(text)
         book = np.random.choice(self.books)
@@ -154,7 +156,7 @@ class LoveCraftBot(GPT2Bot):
 
     def format_text(self, text):
         try:
-            end = list(re.finditer("[.;\n”\"]", text))[-1].start()
+            end = list(re.finditer("[.;\n”\"\?]", text))[-1].start()
         except:
             end = len(text)
         message = text[:end+1]
@@ -162,6 +164,29 @@ class LoveCraftBot(GPT2Bot):
         if message.endswith("”") or message.endswith("\n"): message = message[:-1]
         message = "“...{}...”".format(message)
         return message
+
+class EquationGenBot(GPT2Bot):
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, name="EquationGen", **kwargs)
+
+    def check_lr(self, text):
+        lefts = re.finditer("\\left", text)
+        rights = re.finditer("\\right", text)
+        if (len(lefts) == 0 and len(rights) != 0) or (len(rights) == 0 and len(lefts) != 0):
+            return False
+        if list(lefts)[0].start() > list(rights)[0].start():
+            return False
+        return True
+    def format_text(self, text):
+        
+        text = text.split("\n\n")
+        message = text[:end+1]
+        if message.startswith("“"): message = message[1:]
+        if message.endswith("”") or message.endswith("\n"): message = message[:-1]
+        message = "“...{}...”".format(message)
+        return message
+
 # “”
 BIBLECRAFTBOT = {"name": "BibleCraftBot",
                  "dataset": "dataset_won_300space_bible_won_nor_lb.txt",
